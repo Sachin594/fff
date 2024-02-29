@@ -1,10 +1,10 @@
 from flask import Flask, render_template, request,jsonify
 from flask_cors import CORS,cross_origin
 import requests
-from bs4 import BeautifulSoup
-from urllib.request import urlopen as uReq
-import logging
+from bs4 import BeautifulSoup as bs
+from urllib.request import urlopen as urlreq
 import pymongo
+import logging
 logging.basicConfig(filename="scrapper.log" , level=logging.INFO)
 import os
 
@@ -18,60 +18,50 @@ def homepage():
 def index():
     if request.method == 'POST':
                 try:
+                        save_dir='image/'
+                        if not os.path.exists(save_dir):
+                            os.makedirs(save_dir)
+                        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36"}
+                        query=request.form['content'].replace(" ","")
+                        response=requests.get(f"https://www.google.com/search?q={query}&tbm=isch&ved=2ahUKEwi20JLin86EAxUOa2wGHVI9D6oQ2-cCegQIABAA&oq=selmon+bhoi&gs_lp=EgNpbWciC3NlbG1vbiBiaG9pMgUQABiABDIKEAAYgAQYigUYQzIFEAAYgAQyBRAAGIAEMgUQABiABDIFEAAYgAQyBRAAGIAEMgUQABiABDIFEAAYgAQyBRAAGIAESNwhUK4IWOIbcAB4AJABAJgB4wGgAdsRqgEGMC4xMS4xuAEDyAEA-AEBigILZ3dzLXdpei1pbWfCAg0QABiABBiKBRhDGLEDwgIIEAAYgAQYsQPCAgQQIxgniAYB&sclient=img&ei=iUPfZfbnDY7WseMP0vq80Ao&bih=742&biw=1536&rlz=1C1RXQR_en-GBIN1071IN1071")
+                        responce_bs=bs(response.content,'html.parser')
+                        img_tags=responce_bs.find_all("img")
+                        del img_tags[0]
+                        image_data_mongo=[]
+                        for index,i in enumerate(img_tags) :
+                            image_url=i['src']
+                            image_data=requests.get(image_url).content
+                            mydict={"index":image_url,"image":image_data}
+                            image_data_mongo.append(mydict)
+                            with open(os.path.join(save_dir,f"{query}_{img_tags.index(i)}.jpg"),"wb") as f :
+                                f.write(image_data)
 
-                    # query to search for images
-                    query = request.form['content'].replace(" ","")
 
-                            # directory to store downloaded images
-                    save_directory = "images/"
+                        from pymongo.mongo_client import MongoClient
+                        from pymongo.server_api import ServerApi
 
-                            # create the directory if it doesn't exist
-                    if not os.path.exists(save_directory):
-                        os.makedirs(save_directory)
+                        uri = "mongodb+srv://Sachin947:sachin@cluster947.n1o4otf.mongodb.net/?retryWrites=true&w=majority&appName=Cluster947"
 
+                        # Create a new client and connect to the server
+                        client = MongoClient(uri, server_api=ServerApi('1'))
 
-
-                            # fake user agent to avoid getting blocked by Google
-                    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36"}
-
-                            # fetch the search results page
-                    response = requests.get(f"https://www.google.com/search?q={query}&sxsrf=AJOqlzUuff1RXi2mm8I_OqOwT9VjfIDL7w:1676996143273&source=lnms&tbm=isch&sa=X&ved=2ahUKEwiq-qK7gaf9AhXUgVYBHYReAfYQ_AUoA3oECAEQBQ&biw=1920&bih=937&dpr=1#imgrc=1th7VhSesfMJ4M")
-
-
-                            # parse the HTML using BeautifulSoup
-                    soup = BeautifulSoup(response.content, "html.parser")
-
-                            # find all img tags
-                    image_tags = soup.find_all("img")
-
-                            # download each image and save it to the specified directory
-                    del image_tags[0]
-                    img_data=[]
-                    for index,image_tag in enumerate(image_tags):
-                                # get the image source URL
-                                image_url = image_tag['src']
-                                #print(image_url)
-                                
-                                # send a request to the image URL and save the image
-                                image_data = requests.get(image_url).content
-                                mydict={"Index":index,"Image":image_data}
-                                img_data.append(mydict)
-                                with open(os.path.join(save_directory, f"{query}_{image_tags.index(image_tag)}.jpg"), "wb") as f:
-                                    f.write(image_data)
-                    client = pymongo.MongoClient("mongodb+srv://snshrivas:Snshrivas@cluster0.ln0bt5m.mongodb.net/?retryWrites=true&w=majority")
-                    db = client['image_scrap']
-                    review_col = db['image_scrap_data']
-                    review_col.insert_many(img_data)          
-
-                    return "image laoded"
-                except Exception as e:
+                        # Send a ping to confirm a successful connection
+                        try:
+                            client.admin.command('ping')
+                            print("Pinged your deployment. You successfully connected to MongoDB!")
+                        except Exception as e:
+                            print(e)
+                        db=client["image_scrap"]
+                        col=db["image_scrap_data"]
+                        col.insert_many(image_data_mongo)
+                        return "image loaded"
+                except Exception as e :
                     logging.info(e)
-                    return 'something is wrong'
-            # return render_template('results.html')
+                    return "something is wrong"
+    else :
+        return render_template("index.html")
 
-    else:
-        return render_template('index.html')
 
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=8000)
+    app.run(host='0.0.0.0', port=5000)
